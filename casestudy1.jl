@@ -51,7 +51,7 @@ predict()
 
 loss() = Flux.Losses.mse(predict(x), y)
 
-loss(x_train, y_train)
+loss()
 
 opt = Descent()
 data = [(x_train, y_train)]

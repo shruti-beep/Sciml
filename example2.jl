@@ -24,6 +24,7 @@ NNForce = Chain(x -> [x],
            Dense(32,1),
            first)
 
+NNForce(t2[1])
 loss() = sum(abs2,NNForce(position_data[i]) - force_data[i] for i in 1:length(position_data))
 loss()
 

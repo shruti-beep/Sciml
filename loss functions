@@ -1,0 +1,93 @@
+using DifferentialEquations
+using OrdinaryDiffEq
+using Flux
+using Flux: train!
+using Plots
+using Statistics
+
+
+function msd(ddu,du,u,p,t)
+    ddu[1]= -u[1]*p[1]-du[1]*p[2]
+end
+
+function spring()
+    initialvel=[0]
+    initialdisp=[9]
+    tspan = (0.0,8)
+    p=[1,0]
+    prob=SecondOrderODEProblem(msd,initialvel,initialdisp,tspan,p)
+    sol = solve(prob)
+    return sol
+end
+
+sol=spring()
+
+t1 = 0:0.01:8
+dataplot=sol(t1)
+
+posplot= [state[2]  for state in dataplot]
+velplot= [state[1]  for state in dataplot]
+
+t2=0:0.1:8
+dataset=sol(t2)
+
+posdata=[state[2]  for state in dataset]
+veldata= [state[1]  for state in dataset]
+
+
+velreal=veldata+ 0.5*randn(size(veldata))+0.8*t2
+
+target_plot=velplot+0.8*t1
+
+
+NNvel =Chain(x ->[x],
+ Dense(1,32,tanh),
+ Dense(32,1),
+ first)
+
+###########LOSS FUNCTIONS ##############################################################
+i=0
+for i in t2
+    print(i)
+    loss() =Flux.Losses.mse((veldata[i].-velreal[i]),NNvel(t2[i]))
+end 
+
+##########
+
+loss() =Flux.Losses.mse((velreal.-veldata),NNvel.(t2))
+
+#loss() = sum(abs2,NNForce(position_data[i]) - force_data[i] for i in 1:length(position_data))
+
+#x = Vector{Float64}()
+#for i in t2
+#  push!(x, NNvel(i))
+#end
+
+#loss() =Flux.Losses.mse((veldata.-velreal),x)
+
+loss()
+
+############################################################################################
+opt = Flux.Descent(0.01)
+data = Iterators.repeated((), 5000)
+iter = 0
+cb = function () #callback function to observe training
+    global iter += 1
+    if iter % 500 == 0
+      display(loss())
+    end
+  end
+display(loss())
+Flux.train!(loss, Flux.params(NNvel), data, opt; cb=cb)
+
+learned_vel = NNvel.(t1)
+
+pred_vel=velplot.+learned_vel
+
+scatter(t2,velreal)
+plot!(t1,velplot,label="ODE Model")
+plot!(t1,pred_vel,label="Predicted Velocity")
+plot!(t1, target_plot, label="Target")
+
+
+
