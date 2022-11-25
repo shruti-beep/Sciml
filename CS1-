@@ -1,0 +1,130 @@
+using DifferentialEquations
+using OrdinaryDiffEq
+using Flux
+using Flux: train!
+using Plots
+using Statistics
+using ModelingToolkit
+
+@inline function if_else(condition::Bool, @nospecialize(trueval), @nospecialize(falseval))
+    return ifelse(condition, trueval, falseval)
+end
+
+ModelingToolkit.@register if_else(x, trueval, falseval)
+# This is needed to bring if_else into MTK's scope.
+@eval ModelingToolkit using ..Main: if_else
+
+step(i) = if_else(i > 1, 1, 0)
+@variables t
+step(t)
+
+function create(input)
+    @parameters k1,k2,b1,b2,m1,m2
+    @variables t,f(t),ff(t),x1(t),x2(t) ,xx1(t),xx2(t)
+    D = Differential(t)
+
+    @named msdsys = ODESystem([f ~ input(t), D(f) ~ ff, D(x1) ~ xx1 , D(x2) ~ xx2 ,
+                 D(xx1) ~ (-k1*x1 + k1*x2 - b1*xx1 + b2*xx2)/(m1) ,
+                 D(xx2) ~ (k1*x1 + k1*x2 + b1*xx1 -b2*xx2 - k2*x1 + k2*f - b2*x1 + b2*ff)/(m2)])
+
+    params = [k1,k2,b1,b2,m1,m2] .=>  [5,6,3,0,40,20] 
+    initial = [f,ff, x1, x2 ,xx1, xx2] .=> [0,0,0,0,0,0]
+    msdsimp = structural_simplify(msdsys)
+    tspan = (0.,10)
+    # od = ODESystem(msdsimp, t,[0,0,0,0,0], [4,3,0,0,100,20] ,(0.,100.))
+    prob = ODEProblem(msdsimp, initial, tspan, params)
+    return prob
+end
+
+
+
+prob=create(step)
+
+sol = solve(prob)
+
+
+plot(sol, vars=[x])
+
+j=[state[2] for state in sol]
+
+plot(sol.t, j)
+
+
+my_time_range = 0:100
+
+disp = getindex.(sol.(my_time_range),1)
+
+plot(my_time_range,disp)
+
+
+
+
+# t1 = 0:0.01:8
+# dataplot=sol(t1)
+
+# posplot= [state[2]  for state in dataplot]
+# velplot= [state[1]  for state in dataplot]
+
+# t2=0:0.1:8
+# dataset=sol(t2)
+
+# posdata=[state[2]  for state in dataset]
+# veldata= [state[1]  for state in dataset]
+
+
+# velreal=veldata+ 0.5*randn(size(veldata))+0.8*t2
+
+# target_plot=velplot+0.8*t1
+
+
+# NNvel =Chain(x ->[x],
+#  Dense(1,32,tanh),
+#  Dense(32,1),
+#  first)
+
+# ###########LOSS FUNCTIONS ##############################################################
+# i=0
+# for i in t2
+#     print(i)
+#     loss() =Flux.Losses.mse((veldata[i].-velreal[i]),NNvel(t2[i]))
+# end 
+
+# ##########
+
+# loss() =Flux.Losses.mse((velreal.-veldata),NNvel.(t2))
+
+# #loss() = sum(abs2,NNForce(position_data[i]) - force_data[i] for i in 1:length(position_data))
+
+# #x = Vector{Float64}()
+# #for i in t2
+# #  push!(x, NNvel(i))
+# #end
+
+# #loss() =Flux.Losses.mse((veldata.-velreal),x)
+
+# loss()
+
+# ############################################################################################
+# opt = Flux.Descent(0.01)
+# data = Iterators.repeated((), 5000)
+# iter = 0
+# cb = function () #callback function to observe training
+#     global iter += 1
+#     if iter % 500 == 0
+#       display(loss())
+#     end
+#   end
+# display(loss())
+# Flux.train!(loss, Flux.params(NNvel), data, opt; cb=cb)
+
+# learned_vel = NNvel.(t1)
+
+# pred_vel=velplot.+learned_vel
+
+# scatter(t2,velreal)
+# plot!(t1,velplot,label="ODE Model")
+# plot!(t1,pred_vel,label="Predicted Velocity")
+# plot!(t1, target_plot, label="Target")
+
+
+
