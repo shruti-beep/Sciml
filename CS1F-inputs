@@ -1,0 +1,109 @@
+using DifferentialEquations
+using OrdinaryDiffEq
+using Flux
+using Flux: train!
+using Plots
+
+
+m = 2                          # mass[m]
+k = 6                          # spring constant [k]
+b = 0                          # damping term
+
+function msdactual!(du,u,p,t)
+    du[1] = u[2]
+    du[2] = -(k/m)*u[1]-(b/m)*u[2] + (p(t)/m)
+end
+
+function msdmodel!(du,u,p,t)
+    du[1] = u[2]
+    du[2] = -(k/m)*u[1]-(b/m)*u[2] 
+end
+  
+u = 1                       # initial angular deflection [rad]
+du =1                        # initial angular velocity [rad/s]
+initial = [u, du]              # initial state vector
+tspan = (0.0,5)             # time interval
+
+@inline function if_else(condition::Bool, @nospecialize(trueval), @nospecialize(falseval))
+    return ifelse(condition, trueval, falseval)
+end
+
+bumpvalue=5.0
+
+step(t) = if_else(t > 1, bumpvalue, 0)
+bump(t) = if_else(0<t<pi, 4*sin(t), 0)
+
+
+probactual = ODEProblem(msdactual!,initial,tspan,step)
+probmodel = ODEProblem(msdmodel!,initial,tspan)
+solactual = solve(probactual)
+solmodel  = solve(probmodel)
+
+t1 = 0:0.1:5
+dataactual=solactual(t1)
+
+velactual= [state[2]  for state in dataactual]
+posactual= [state[1]  for state in dataactual]
+
+t2=0:0.1:5
+datamodel=solmodel(t2)
+
+velmodel=[state[2]  for state in datamodel]
+posmodel= [state[1]  for state in datamodel]
+
+posactual+= 0.1*randn(size(posactual))
+
+plot(solactual,linewidth=2,xaxis="t",label=["xactual" "vactual"],layout=(2,1))
+plot!(solmodel,linewidth=2,xaxis="t",label=["xmodel" "vmodel"],layout=(2,1))
+scatter!(t2, posactual)
+
+#input = bumpvalue and output = velmodel-velactual
+NNpos =Chain(
+ Dense(2,32,tanh),
+ Dense(32,1),
+ first)
+
+stepdata= map(t -> step(t), t2)
+NNfit=posactual .- posmodel
+#NNvel(stepdata[4])
+#map(i ->  NNvel(stepdata[i]), 1:21)
+#loss() = Flux.Losses.mse(velmodvelactual, k)
+#loss() =Flux.Losses.mse(NNfit,NNvel(stepdata))
+#loss() = sum(abs, NNvel([stepdata[i],t2[i]]) - NNfit[i] for i=1:21)
+# Applying the loss function element-wise to the input vector
+#loss([stepdata,t2], NNfit)
+
+NNpos([t2[4],stepdata[4]])
+loss() = Flux.Losses.mse([NNfit[i] for i in 1:51],[NNpos([t2[i],stepdata[i]]) for i in 1:51])
+loss()
+
+#loss() =sum(broadcast(abs,(NNfit .- (map(i ->  NNvel(stepdata[i]), 1:21)))))
+
+#loss()
+
+#opt = Descent()
+#data = (stepdata, NNfit)
+#parameters = Flux.params(NNvel)
+
+opt = Flux.Descent(0.01)
+data = Iterators.repeated((), 10000)
+iter = 0
+cb = function () #callback function to observe training
+  global iter += 1
+  if iter % 1000 == 0
+    display(loss())
+  end 
+end
+
+display(loss())
+Flux.train!(loss, Flux.params(NNpos), data, opt; cb=cb)
+
+
+NNinput=hcat(t2,stepdata)
+NNoutput = map(i -> NNpos(NNinput[i,:]), 1:51)
+NNplot = NNoutput+ posmodel
+
+plot!(t2,NNplot,linewidth=2,label="NN +xmodel")
+
+
+
